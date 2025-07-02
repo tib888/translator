@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 const MAX_CHUNK_SIZE: usize = 4500; // A bit less than the 5000 byte API limit to be safe
 
-/// A command-line tool to translate text files to Hungarian using the LibreTranslate API
+/// A command-line tool to translate text files using the LibreTranslate API
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -22,6 +22,14 @@ struct Args {
     /// The LibreTranslate API endpoint URL
     #[arg(long, default_value = "https://translate.fedilab.app/translate")]
     api_url: String,
+
+    /// Source language for translation (e.g., 'en')
+    #[arg(short, long, default_value = "en")]
+    source: String,
+
+    /// Target language for translation (e.g., 'hu')
+    #[arg(short, long, default_value = "hu")]
+    target: String,
 }
 
 #[derive(Serialize)]
@@ -42,6 +50,8 @@ async fn translate_chunk(
     client: &reqwest::Client,
     chunk: &str,
     api_url: &str,
+    source_lang: &str,
+    target_lang: &str,
     bar: &ProgressBar,
 ) -> Result<String, Box<dyn std::error::Error>> {
     const MAX_RETRIES: u32 = 3;
@@ -60,8 +70,8 @@ async fn translate_chunk(
 
         let request_payload = TranslationRequest {
             q: chunk,
-            source: "en",
-            target: "hu",
+            source: source_lang,
+            target: target_lang,
         };
 
         let response = match client.post(api_url).json(&request_payload).send().await {
@@ -188,7 +198,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for chunk in chunks {
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;// Be polite to the public API by waiting a moment between requests (max 8/minute allowed)
 
-        let translated = translate_chunk(&client, &chunk, &args.api_url, &bar).await?;
+        let translated = translate_chunk(
+            &client,
+            &chunk,
+            &args.api_url,
+            &args.source,
+            &args.target,
+            &bar,
+        ).await?;
         translated_chunks.push(translated);
         bar.inc(1);
     }
@@ -201,7 +218,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(&output_path, final_translation)?;
         println!("Translated text saved to: {:?}", output_path);
     } else {
-        println!("\n--- Hungarian Translation ---");
+        println!(
+            "\n--- Translated Text ({} -> {}) ---",
+            args.source, args.target
+        );
         println!("{}", final_translation);
         println!("--- End of Translation ---");
     }
